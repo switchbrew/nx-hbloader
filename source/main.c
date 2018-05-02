@@ -1,7 +1,6 @@
 #include <switch.h>
 #include <string.h>
 #include <stdio.h>
-#include "nro.h"
 
 #define MODULE_HBL 347
 
@@ -47,7 +46,14 @@ void __appInit(void)
     if (R_FAILED(rc))
         fatalSimple(MAKERESULT(MODULE_HBL, 2));
 
-    fsdevInit();
+    fsdevMountSdmc();
+}
+
+void __appExit(void)
+{
+    fsdevUnmountAll();
+    fsExit();
+    smExit();
 }
 
 static void*  g_heapAddr;
@@ -136,6 +142,7 @@ void getOwnProcessHandle(void)
         fatalSimple(MAKERESULT(MODULE_HBL, 23));
 
     IpcCommand ipc;
+    ipcInitialize(&ipc);
     ipcSendHandleCopy(&ipc, 0xffff8001);
 
     struct {
@@ -171,26 +178,26 @@ void loadNro(void)
     {
         // Unmap previous NRO.
         header = &g_nroHeader;
-        rw_size = header->Segments[2].Size + header->bssSize;
+        rw_size = header->segments[2].size + header->bss_size;
         rw_size = (rw_size+0xFFF) & ~0xFFF;
 
         // .text
         rc = svcUnmapProcessCodeMemory(
-            g_procHandle, g_nroAddr + header->Segments[0].FileOff, ((u64) g_heapAddr) + header->Segments[0].FileOff, header->Segments[0].Size);
+            g_procHandle, g_nroAddr + header->segments[0].file_off, ((u64) g_heapAddr) + header->segments[0].file_off, header->segments[0].size);
 
         if (R_FAILED(rc))
             fatalSimple(MAKERESULT(MODULE_HBL, 24));
 
         // .rodata
         rc = svcUnmapProcessCodeMemory(
-            g_procHandle, g_nroAddr + header->Segments[1].FileOff, ((u64) g_heapAddr) + header->Segments[1].FileOff, header->Segments[1].Size);
+            g_procHandle, g_nroAddr + header->segments[1].file_off, ((u64) g_heapAddr) + header->segments[1].file_off, header->segments[1].size);
 
         if (R_FAILED(rc))
             fatalSimple(MAKERESULT(MODULE_HBL, 25));
 
        // .data + .bss
         rc = svcUnmapProcessCodeMemory(
-            g_procHandle, g_nroAddr + header->Segments[2].FileOff, ((u64) g_heapAddr) + header->Segments[2].FileOff, rw_size);
+            g_procHandle, g_nroAddr + header->segments[2].file_off, ((u64) g_heapAddr) + header->segments[2].file_off, rw_size);
 
         if (R_FAILED(rc))
             fatalSimple(MAKERESULT(MODULE_HBL, 26));
@@ -225,7 +232,7 @@ void loadNro(void)
     if (fread(header, sizeof(*header), 1, f) != 1)
         fatalSimple(MAKERESULT(MODULE_HBL, 4));
 
-    if(header->Magic != NROHEADER_MAGICNUM)
+    if(header->magic != NROHEADER_MAGIC)
         fatalSimple(MAKERESULT(MODULE_HBL, 5));
 
     size_t rest_size = header->size - (sizeof(NroStart) + sizeof(NroHeader));
@@ -234,17 +241,17 @@ void loadNro(void)
 
     fclose(f);
 
-    size_t total_size = header->size + header->bssSize;
+    size_t total_size = header->size + header->bss_size;
     total_size = (total_size+0xFFF) & ~0xFFF;
 
-    rw_size = header->Segments[2].Size + header->bssSize;
+    rw_size = header->segments[2].size + header->bss_size;
     rw_size = (rw_size+0xFFF) & ~0xFFF;
 
     int i;
     for (i=0; i<3; i++)
     {
-        if (header->Segments[i].FileOff >= header->size || header->Segments[i].Size > header->size ||
-            (header->Segments[i].FileOff + header->Segments[i].Size) > header->size)
+        if (header->segments[i].file_off >= header->size || header->segments[i].size > header->size ||
+            (header->segments[i].file_off + header->segments[i].size) > header->size)
         {
             fatalSimple(MAKERESULT(MODULE_HBL, 6));
         }
@@ -269,26 +276,26 @@ void loadNro(void)
 
     // .text
     rc = svcSetProcessMemoryPermission(
-        g_procHandle, map_addr + header->Segments[0].FileOff, header->Segments[0].Size, PERM_R | PERM_X);
+        g_procHandle, map_addr + header->segments[0].file_off, header->segments[0].size, Perm_R | Perm_X);
 
     if (R_FAILED(rc))
         fatalSimple(MAKERESULT(MODULE_HBL, 19));
 
     // .rodata
     rc = svcSetProcessMemoryPermission(
-        g_procHandle, map_addr + header->Segments[1].FileOff, header->Segments[1].Size, PERM_R);
+        g_procHandle, map_addr + header->segments[1].file_off, header->segments[1].size, Perm_R);
 
     if (R_FAILED(rc))
         fatalSimple(MAKERESULT(MODULE_HBL, 20));
 
     // .data + .bss
     rc = svcSetProcessMemoryPermission(
-        g_procHandle, map_addr + header->Segments[2].FileOff, rw_size, PERM_RW);
+        g_procHandle, map_addr + header->segments[2].file_off, rw_size, Perm_Rw);
 
     if (R_FAILED(rc))
         fatalSimple(MAKERESULT(MODULE_HBL, 21));
 
-    u64 nro_size = header->Segments[2].FileOff + rw_size;
+    u64 nro_size = header->segments[2].file_off + rw_size;
     u64 nro_heap_start = ((u64) g_heapAddr) + nro_size;
     u64 nro_heap_size  = g_heapSize + (u64) g_heapAddr - (u64) nro_heap_start;
 
