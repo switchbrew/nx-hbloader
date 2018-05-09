@@ -124,11 +124,7 @@ void getOwnProcessHandle(void)
     if (R_FAILED(rc))
         fatalSimple(MAKERESULT(MODULE_HBL, 10));
 
-    rc = smUnregisterService("appletOE");
-    if (R_FAILED(rc))
-        fatalSimple(MAKERESULT(MODULE_HBL, 11));
-
-    rc = smRegisterService(&g_port, "appletOE", false, 1);
+    rc = smRegisterService(&g_port, "hb:ldr", false, 1);
     if (R_FAILED(rc))
         fatalSimple(MAKERESULT(MODULE_HBL, 12));
 
@@ -137,7 +133,7 @@ void getOwnProcessHandle(void)
         fatalSimple(MAKERESULT(MODULE_HBL, 13));
 
     Service srv;
-    rc = smGetService(&srv, "appletOE");
+    rc = smGetService(&srv, "hb:ldr");
     if (R_FAILED(rc))
         fatalSimple(MAKERESULT(MODULE_HBL, 23));
 
@@ -159,6 +155,10 @@ void getOwnProcessHandle(void)
 
     serviceClose(&srv);
     svcCloseHandle(g_port);
+
+    rc = smUnregisterService("hb:ldr");
+    if (R_FAILED(rc))
+        fatalSimple(MAKERESULT(MODULE_HBL, 11));
 
     smExit();
 }
