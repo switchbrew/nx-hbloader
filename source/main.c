@@ -309,7 +309,7 @@ void loadNro(void)
         { EntryType_Argv,                 0, {0, 0} },
         { EntryType_NextLoadPath,         0, {0, 0} },
         { EntryType_LastLoadResult,       0, {0, 0} },
-        { EntryType_SyscallAvailableHint, 0, {0xffffffffffffffff, 0x1fc00000007ffff} },
+        { EntryType_SyscallAvailableHint, 0, {0xffffffffffffffff, 0x1fc1fff0007ffff} },
         { EntryType_EndOfList,            0, {0, 0} }
     };
 
