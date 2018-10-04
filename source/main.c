@@ -12,6 +12,7 @@ static char g_nextNroPath[512];
 static u64  g_nroAddr = 0;
 static u64  g_nroSize = 0;
 static NroHeader g_nroHeader;
+static bool g_isApplication = 0;
 
 static u8 g_savedTls[0x100];
 
@@ -113,6 +114,26 @@ void threadFunc(void* ctx)
 
     g_procHandle = ipc.Handles[0];
     svcCloseHandle(session);
+}
+
+//Gets the PID of the process with application_type==APPLICATION in the NPDM, then sets g_isApplication if it matches the current PID.
+void getIsApplication(void) {
+    Result rc=0;
+    u64 cur_pid=0, app_pid=0;
+
+    g_isApplication = 0;
+
+    rc = svcGetProcessId(&cur_pid, CUR_PROCESS_HANDLE);
+    if (R_FAILED(rc)) return;
+
+    rc = pmshellInitialize();
+
+    if (R_SUCCEEDED(rc)) {
+        rc = pmshellGetApplicationPid(&app_pid);
+        pmshellExit();
+    }
+
+    if (R_SUCCEEDED(rc) && cur_pid == app_pid) g_isApplication = 1;
 }
 
 void getOwnProcessHandle(void)
@@ -313,6 +334,13 @@ void loadNro(void)
         { EntryType_EndOfList,            0, {0, 0} }
     };
 
+    ConfigEntry *entry_AppletType = &entries[2];
+
+    if (g_isApplication) {
+        entry_AppletType->Value[0] = AppletType_SystemApplication;
+        entry_AppletType->Value[1] = EnvAppletFlags_ApplicationOverride;
+    }
+
     // MainThreadHandle
     entries[0].Value[0] = envGetMainThreadHandle();
     // ProcessHandle
@@ -344,6 +372,7 @@ int main(int argc, char **argv)
     memcpy(g_savedTls, (u8*)armGetTls() + 0x100, 0x100);
 
     setupHbHeap();
+    getIsApplication();
     getOwnProcessHandle();
     loadNro();
 
