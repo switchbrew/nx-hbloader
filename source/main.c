@@ -331,6 +331,7 @@ void loadNro(void)
         { EntryType_NextLoadPath,         0, {0, 0} },
         { EntryType_LastLoadResult,       0, {0, 0} },
         { EntryType_SyscallAvailableHint, 0, {0xffffffffffffffff, 0x1fc1fff0007ffff} },
+        { EntryType_RandomSeed,           0, {0, 0} },
         { EntryType_EndOfList,            0, {0, 0} }
     };
 
@@ -355,6 +356,9 @@ void loadNro(void)
     entries[5].Value[1] = (u64) &g_nextArgv[0];
     // LastLoadResult
     entries[6].Value[0] = g_lastRet;
+    // RandomSeed
+    entries[8].Value[0] = randomGet64();
+    entries[8].Value[1] = randomGet64();
 
     u64 entrypoint = map_addr;
 
