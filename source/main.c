@@ -76,11 +76,11 @@ void setupHbHeap(void)
         size = (mem_available - mem_used - 0x200000) & ~0x1FFFFF;
     if (size==0)
         size = 0x2000000*16;
-    
+
     if (size > 0x6000000 && g_isAutomaticGameplayRecording) {
         size -= 0x6000000;
     }
-    
+
     rc = svcSetHeapSize(&addr, size);
 
     if (R_FAILED(rc) || addr==NULL)
@@ -148,20 +148,20 @@ void getIsAutomaticGameplayRecording(void) {
     if (kernelAbove500() && g_isApplication) {
         Result rc=0;
         u64 cur_tid=0;
-        
+
         rc = svcGetInfo(&cur_tid, 18, CUR_PROCESS_HANDLE, 0);
         if (R_FAILED(rc)) return;
-        
+
         g_isAutomaticGameplayRecording = 0;
-        
+
         rc = nsInitialize();
-        
+
         if (R_SUCCEEDED(rc)) {
             size_t dummy;
             rc = nsGetApplicationControlData(0x1, cur_tid, &g_applicationControlData, sizeof(g_applicationControlData), &dummy);
             nsExit();
         }
-                        
+
         if (R_SUCCEEDED(rc) && (((g_applicationControlData.nacp.x3034_unk >> 8) & 0xFF) == 2)) g_isAutomaticGameplayRecording = 1;
     }
 }
@@ -200,7 +200,7 @@ void getOwnProcessHandle(void)
     raw->x = raw->y = 0;
 
     rc = serviceIpcDispatch(&srv);
-    
+
     threadWaitForExit(&t);
     threadClose(&t);
 
