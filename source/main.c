@@ -14,6 +14,9 @@ static u64  g_nroSize = 0;
 static NroHeader g_nroHeader;
 static bool g_isApplication = 0;
 
+static NsApplicationControlData g_applicationControlData;
+static bool g_isAutomaticGameplayRecording = 0;
+
 static u8 g_savedTls[0x100];
 
 // Used by trampoline.s
@@ -73,6 +76,10 @@ void setupHbHeap(void)
         size = (mem_available - mem_used - 0x200000) & ~0x1FFFFF;
     if (size==0)
         size = 0x2000000*16;
+
+    if (size > 0x6000000 && g_isAutomaticGameplayRecording) {
+        size -= 0x6000000;
+    }
 
     rc = svcSetHeapSize(&addr, size);
 
@@ -136,6 +143,29 @@ void getIsApplication(void) {
     if (R_SUCCEEDED(rc) && cur_pid == app_pid) g_isApplication = 1;
 }
 
+//Gets the control.nacp for the current title id, and then sets g_isAutomaticGameplayRecording if less memory should be allocated.
+void getIsAutomaticGameplayRecording(void) {
+    if (kernelAbove500() && g_isApplication) {
+        Result rc=0;
+        u64 cur_tid=0;
+
+        rc = svcGetInfo(&cur_tid, 18, CUR_PROCESS_HANDLE, 0);
+        if (R_FAILED(rc)) return;
+
+        g_isAutomaticGameplayRecording = 0;
+
+        rc = nsInitialize();
+
+        if (R_SUCCEEDED(rc)) {
+            size_t dummy;
+            rc = nsGetApplicationControlData(0x1, cur_tid, &g_applicationControlData, sizeof(g_applicationControlData), &dummy);
+            nsExit();
+        }
+
+        if (R_SUCCEEDED(rc) && (((g_applicationControlData.nacp.x3034_unk >> 8) & 0xFF) == 2)) g_isAutomaticGameplayRecording = 1;
+    }
+}
+
 void getOwnProcessHandle(void)
 {
     static Thread t;
@@ -170,7 +200,7 @@ void getOwnProcessHandle(void)
     raw->x = raw->y = 0;
 
     rc = serviceIpcDispatch(&srv);
-    
+
     threadWaitForExit(&t);
     threadClose(&t);
 
@@ -375,8 +405,9 @@ int main(int argc, char **argv)
 {
     memcpy(g_savedTls, (u8*)armGetTls() + 0x100, 0x100);
 
-    setupHbHeap();
     getIsApplication();
+    getIsAutomaticGameplayRecording();
+    setupHbHeap();
     getOwnProcessHandle();
     loadNro();
 
