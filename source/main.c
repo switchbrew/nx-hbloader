@@ -14,7 +14,6 @@ static u64  g_nroSize = 0;
 static NroHeader g_nroHeader;
 static bool g_isApplication = 0;
 
-
 static NsApplicationControlData g_applicationControlData;
 static bool g_isAutomaticGameplayRecording = 0;
 
@@ -78,7 +77,7 @@ void setupHbHeap(void)
     if (size==0)
         size = 0x2000000*16;
     
-    if (g_isAutomaticGameplayRecording) {
+    if (size > 0x6000000 && g_isAutomaticGameplayRecording) {
         size -= 0x6000000;
     }
     
