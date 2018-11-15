@@ -9,7 +9,7 @@ const char* g_easterEgg = "Do you mean to tell me that you're thinking seriously
 static char g_argv[2048];
 static char g_nextArgv[2048];
 static char g_nextNroPath[512];
-static u64  g_nroAddr = 0;
+u64  g_nroAddr = 0;
 static u64  g_nroSize = 0;
 static NroHeader g_nroHeader;
 static bool g_isApplication = 0;

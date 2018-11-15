@@ -4,6 +4,9 @@
 .type   nroEntrypointTrampoline, %function
 .align 2
 
+.global __libnx_exception_entry
+.type   __libnx_exception_entry, %function
+
 .cfi_startproc
 
 nroEntrypointTrampoline:
@@ -27,5 +30,23 @@ nroEntrypointTrampoline:
     mov  sp, x8
 
     b    loadNro
+
+.cfi_endproc
+
+.section .text.__libnx_exception_entry, "ax", %progbits
+.align 2
+
+.cfi_startproc
+
+__libnx_exception_entry:
+    adrp x7, g_nroAddr
+    ldr  x7, [x7, #:lo12:g_nroAddr]
+    cbz  x7, __libnx_exception_entry_fail
+    br   x7
+
+__libnx_exception_entry_fail:
+    mov w0, #0xf801
+    bl svcReturnFromException
+    b .
 
 .cfi_endproc
