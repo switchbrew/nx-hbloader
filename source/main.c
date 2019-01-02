@@ -422,6 +422,7 @@ void loadNro(void)
 
     if (!has_mod0) {
         // Apply sm-close workaround to NROs which do not contain a valid MOD0 header.
+        // This heuristic is based on the fact that MOD0 support was added very shortly after
         // the fix for the sm-close bug (in fact, two commits later).
         g_smCloseWorkaround = true;
     }
