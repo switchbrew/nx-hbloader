@@ -9,6 +9,7 @@ const char* g_easterEgg = "Do you mean to tell me that you're thinking seriously
 static char g_argv[2048];
 static char g_nextArgv[2048];
 static char g_nextNroPath[512];
+static char g_nroReturnPath[512];
 u64  g_nroAddr = 0;
 static u64  g_nroSize = 0;
 static NroHeader g_nroHeader;
@@ -25,6 +26,8 @@ Result g_lastRet = 0;
 
 extern void* __stack_top;//Defined in libnx.
 #define STACK_SIZE 0x100000 //Change this if main-thread stack size ever changes.
+
+#define DEFAULT_NRO "sdmc:/hbmenu.nro"
 
 void __libnx_initheap(void)
 {
@@ -264,8 +267,15 @@ void loadNro(void)
 
     if (strlen(g_nextNroPath) == 0)
     {
-        strcpy(g_nextNroPath, "sdmc:/hbmenu.nro");
-        strcpy(g_nextArgv,    "sdmc:/hbmenu.nro");
+        char nextNro[512];
+        if (strlen(g_nroReturnPath) == 0)
+            strcpy(nextNro, DEFAULT_NRO);
+        else {
+            strcpy(nextNro, g_nroReturnPath);
+            g_nroReturnPath[0]='\0';
+        }
+        strcpy(g_nextNroPath, nextNro);
+        strcpy(g_nextArgv,    nextNro);
     }
 
     memcpy(g_argv, g_nextArgv, sizeof g_argv);
@@ -372,6 +382,7 @@ void loadNro(void)
         { EntryType_LastLoadResult,       0, {0, 0} },
         { EntryType_SyscallAvailableHint, 0, {0xffffffffffffffff, 0x1fc1fff0007ffff} },
         { EntryType_RandomSeed,           0, {0, 0} },
+        { EntryType_NroReturnPath,         0, {0, 0} },
         { EntryType_EndOfList,            0, {0, 0} }
     };
 
@@ -399,6 +410,8 @@ void loadNro(void)
     // RandomSeed
     entries[8].Value[0] = randomGet64();
     entries[8].Value[1] = randomGet64();
+    // NroReturnPath
+    entries[9].Value[0] = (u64) &g_nroReturnPath[0];
 
     u64 entrypoint = map_addr;
 
@@ -409,7 +422,6 @@ void loadNro(void)
 
     if (!has_mod0) {
         // Apply sm-close workaround to NROs which do not contain a valid MOD0 header.
-        // This heuristic is based on the fact that MOD0 support was added very shortly after
         // the fix for the sm-close bug (in fact, two commits later).
         g_smCloseWorkaround = true;
     }
