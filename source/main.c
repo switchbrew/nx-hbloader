@@ -47,6 +47,15 @@ void __appInit(void)
     if (R_FAILED(rc))
         fatalSimple(MAKERESULT(MODULE_HBL, 1));
 
+    rc = setsysInitialize();
+    if (R_SUCCEEDED(rc)) {
+        SetSysFirmwareVersion fw;
+        rc = setsysGetFirmwareVersion(&fw);
+        if (R_SUCCEEDED(rc))
+            hosversionSet(MAKEHOSVERSION(fw.major, fw.minor, fw.micro));
+        setsysExit();
+    }
+
     rc = fsInitialize();
     if (R_FAILED(rc))
         fatalSimple(MAKERESULT(MODULE_HBL, 2));
