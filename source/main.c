@@ -21,6 +21,8 @@ static bool g_smCloseWorkaround = false;
 static u64 g_appletHeapSize = 0;
 static u64 g_appletHeapReservationSize = 0;
 
+static u128 g_userIdStorage;
+
 static u8 g_savedTls[0x100];
 
 // Used by trampoline.s
@@ -391,6 +393,8 @@ void loadNro(void)
         { EntryType_LastLoadResult,       0, {0, 0} },
         { EntryType_SyscallAvailableHint, 0, {0xffffffffffffffff, 0x9fc1fff0007ffff} },
         { EntryType_RandomSeed,           0, {0, 0} },
+        { EntryType_UserIdStorage,        0, {(u64)(uintptr_t)&g_userIdStorage, 0} },
+        { EntryType_HosVersion,           0, {0, 0} },
         { EntryType_EndOfList,            0, {(u64)(uintptr_t)g_noticeText, sizeof(g_noticeText)} }
     };
 
@@ -418,6 +422,8 @@ void loadNro(void)
     // RandomSeed
     entries[8].Value[0] = randomGet64();
     entries[8].Value[1] = randomGet64();
+    // HosVersion
+    entries[10].Value[0] = hosversionGet();
 
     u64 entrypoint = map_addr;
 
