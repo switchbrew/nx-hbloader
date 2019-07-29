@@ -16,6 +16,9 @@ static NsApplicationControlData g_applicationControlData;
 static bool g_isAutomaticGameplayRecording = 0;
 static bool g_smCloseWorkaround = false;
 
+static u64 g_appletHeapSize = 0;
+static u64 g_appletHeapReservationSize = 0;
+
 static u8 g_savedTls[0x100];
 
 // Used by trampoline.s
@@ -35,10 +38,21 @@ void __libnx_initheap(void)
     fake_heap_end   = &g_innerheap[sizeof g_innerheap];
 }
 
+static Result readSetting(const char* key, void* buf, size_t size)
+{
+    Result rc;
+    u64 actual_size;
+    const char* const section_name = "hbloader";
+    rc = setsysGetSettingsItemValueSize(section_name, key, &actual_size);
+    if (R_SUCCEEDED(rc) && actual_size != size)
+        rc = MAKERESULT(Module_Libnx, LibnxError_BadInput);
+    if (R_SUCCEEDED(rc))
+        rc = setsysGetSettingsItemValue(section_name, key, buf, size);
+    return rc;
+}
+
 void __appInit(void)
 {
-    (void) g_easterEgg[0];
-
     Result rc;
 
     rc = smInitialize();
@@ -51,6 +65,8 @@ void __appInit(void)
         rc = setsysGetFirmwareVersion(&fw);
         if (R_SUCCEEDED(rc))
             hosversionSet(MAKEHOSVERSION(fw.major, fw.minor, fw.micro));
+        readSetting("applet_heap_size", &g_appletHeapSize, sizeof(g_appletHeapSize));
+        readSetting("applet_heap_reservation_size", &g_appletHeapReservationSize, sizeof(g_appletHeapReservationSize));
         setsysExit();
     }
 
@@ -70,25 +86,43 @@ void __wrap_exit(void)
 static void*  g_heapAddr;
 static size_t g_heapSize;
 
-void setupHbHeap(void)
+static u64 calculateMaxHeapSize(void)
 {
     u64 size = 0;
-    void* addr = NULL;
     u64 mem_available = 0, mem_used = 0;
-    Result rc=0;
 
     svcGetInfo(&mem_available, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0);
     svcGetInfo(&mem_used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);
+
     if (mem_available > mem_used+0x200000)
         size = (mem_available - mem_used - 0x200000) & ~0x1FFFFF;
-    if (size==0)
+    if (size == 0)
         size = 0x2000000*16;
-
-    if (size > 0x6000000 && g_isAutomaticGameplayRecording) {
+    if (size > 0x6000000 && g_isAutomaticGameplayRecording)
         size -= 0x6000000;
+
+    return size;
+}
+
+static void setupHbHeap(void)
+{
+    void* addr = NULL;
+    u64 size = calculateMaxHeapSize();
+
+    if (!g_isApplication) {
+        if (g_appletHeapSize) {
+            u64 requested_size = (g_appletHeapSize + 0xFFF) &~ 0xFFF;
+            if (requested_size < size)
+                size = requested_size;
+        }
+        else if (g_appletHeapReservationSize) {
+            u64 reserved_size = (g_appletHeapReservationSize + 0xFFF) &~ 0xFFF;
+            if (reserved_size < size)
+                size -= reserved_size;
+        }
     }
 
-    rc = svcSetHeapSize(&addr, size);
+    Result rc = svcSetHeapSize(&addr, size);
 
     if (R_FAILED(rc) || addr==NULL)
         fatalSimple(MAKERESULT(Module_HomebrewLoader, 9));
@@ -126,7 +160,7 @@ static void procHandleReceiveThread(void* arg)
 }
 
 //Gets the PID of the process with application_type==APPLICATION in the NPDM, then sets g_isApplication if it matches the current PID.
-void getIsApplication(void) {
+static void getIsApplication(void) {
     Result rc=0;
     u64 cur_pid=0, app_pid=0;
 
@@ -146,7 +180,7 @@ void getIsApplication(void) {
 }
 
 //Gets the control.nacp for the current title id, and then sets g_isAutomaticGameplayRecording if less memory should be allocated.
-void getIsAutomaticGameplayRecording(void) {
+static void getIsAutomaticGameplayRecording(void) {
     if (hosversionAtLeast(5,0,0) && g_isApplication) {
         Result rc=0;
         u64 cur_tid=0;
@@ -168,7 +202,7 @@ void getIsAutomaticGameplayRecording(void) {
     }
 }
 
-void getOwnProcessHandle(void)
+static void getOwnProcessHandle(void)
 {
     static Thread t;
     Result rc;
