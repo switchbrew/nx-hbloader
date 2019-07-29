@@ -115,12 +115,12 @@ static void setupHbHeap(void)
 
     if (!g_isApplication) {
         if (g_appletHeapSize) {
-            u64 requested_size = (g_appletHeapSize + 0xFFF) &~ 0xFFF;
+            u64 requested_size = (g_appletHeapSize + 0x1FFFFF) &~ 0x1FFFFF;
             if (requested_size < size)
                 size = requested_size;
         }
         else if (g_appletHeapReservationSize) {
-            u64 reserved_size = (g_appletHeapReservationSize + 0xFFF) &~ 0xFFF;
+            u64 reserved_size = (g_appletHeapReservationSize + 0x1FFFFF) &~ 0x1FFFFF;
             if (reserved_size < size)
                 size -= reserved_size;
         }
