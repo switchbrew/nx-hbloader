@@ -61,11 +61,10 @@ void __appInit(void)
     fsdevMountSdmc();
 }
 
-void __appExit(void)
+void __wrap_exit(void)
 {
-    fsdevUnmountAll();
-    fsExit();
-    smExit();
+    // exit() effectively never gets called, so let's stub it out.
+    fatalSimple(MAKERESULT(Module_HomebrewLoader, 39));
 }
 
 static void*  g_heapAddr;
@@ -408,6 +407,7 @@ int main(int argc, char **argv)
 
     getIsApplication();
     getIsAutomaticGameplayRecording();
+    smExit(); // Close SM as we don't need it anymore.
     setupHbHeap();
     getOwnProcessHandle();
     loadNro();
