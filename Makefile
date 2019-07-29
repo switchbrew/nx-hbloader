@@ -45,6 +45,10 @@ INCLUDES	:=	include
 #ROMFS	:=	romfs
 APP_VERSION	:=	2.2.0
 
+ifeq ($(RELEASE),)
+	APP_VERSION	:=	$(APP_VERSION)-$(shell git describe --dirty --always)
+endif
+
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
