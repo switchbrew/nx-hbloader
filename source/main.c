@@ -2,7 +2,9 @@
 #include <string.h>
 #include <stdio.h>
 
-const char* g_easterEgg = "Do you mean to tell me that you're thinking seriously of building that way, when and if you are an architect?";
+const char g_noticeText[] =
+    "nx-hbloader " VERSION "\0"
+    "Do you mean to tell me that you're thinking seriously of building that way, when and if you are an architect?";
 
 static char g_argv[2048];
 static char g_nextArgv[2048];
@@ -389,7 +391,7 @@ void loadNro(void)
         { EntryType_LastLoadResult,       0, {0, 0} },
         { EntryType_SyscallAvailableHint, 0, {0xffffffffffffffff, 0x9fc1fff0007ffff} },
         { EntryType_RandomSeed,           0, {0, 0} },
-        { EntryType_EndOfList,            0, {0, 0} }
+        { EntryType_EndOfList,            0, {(u64)(uintptr_t)g_noticeText, sizeof(g_noticeText)} }
     };
 
     ConfigEntry *entry_AppletType = &entries[2];
