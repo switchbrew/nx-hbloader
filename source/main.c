@@ -78,8 +78,8 @@ void setupHbHeap(void)
     u64 mem_available = 0, mem_used = 0;
     Result rc=0;
 
-    svcGetInfo(&mem_available, 6, CUR_PROCESS_HANDLE, 0);
-    svcGetInfo(&mem_used, 7, CUR_PROCESS_HANDLE, 0);
+    svcGetInfo(&mem_available, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0);
+    svcGetInfo(&mem_used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);
     if (mem_available > mem_used+0x200000)
         size = (mem_available - mem_used - 0x200000) & ~0x1FFFFF;
     if (size==0)
@@ -148,11 +148,11 @@ void getIsApplication(void) {
 
 //Gets the control.nacp for the current title id, and then sets g_isAutomaticGameplayRecording if less memory should be allocated.
 void getIsAutomaticGameplayRecording(void) {
-    if (kernelAbove500() && g_isApplication) {
+    if (hosversionAtLeast(5,0,0) && g_isApplication) {
         Result rc=0;
         u64 cur_tid=0;
 
-        rc = svcGetInfo(&cur_tid, 18, CUR_PROCESS_HANDLE, 0);
+        rc = svcGetInfo(&cur_tid, InfoType_TitleId, CUR_PROCESS_HANDLE, 0);
         if (R_FAILED(rc)) return;
 
         g_isAutomaticGameplayRecording = 0;
