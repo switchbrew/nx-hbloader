@@ -51,7 +51,10 @@ static Result readSetting(const char* key, void* buf, size_t size)
     if (R_SUCCEEDED(rc) && actual_size != size)
         rc = MAKERESULT(Module_Libnx, LibnxError_BadInput);
     if (R_SUCCEEDED(rc))
-        rc = setsysGetSettingsItemValue(section_name, key, buf, size);
+        rc = setsysGetSettingsItemValue(section_name, key, buf, size, &actual_size);
+    if (R_SUCCEEDED(rc) && actual_size != size)
+        rc = MAKERESULT(Module_Libnx, LibnxError_BadInput);
+    if (R_FAILED(rc)) memset(buf, 0, size);
     return rc;
 }
 
