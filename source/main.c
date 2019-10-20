@@ -25,6 +25,10 @@ static u128 g_userIdStorage;
 
 static u8 g_savedTls[0x100];
 
+// Minimize fs resource usage
+u32 __nx_fs_num_sessions = 1;
+u32 __nx_fsdev_direntry_cache_size = 1;
+
 // Used by trampoline.s
 Result g_lastRet = 0;
 
@@ -145,24 +149,19 @@ static void procHandleReceiveThread(void* arg)
     Handle session = (Handle)(uintptr_t)arg;
     Result rc;
 
-    u32* tls = (u32*)armGetTls();
-    tls[0] = 0;
-    tls[1] = 0;
+    void* base = armGetTls();
+    hipcMakeRequestInline(base);
 
     s32 idx = 0;
     rc = svcReplyAndReceive(&idx, &session, 1, INVALID_HANDLE, UINT64_MAX);
     if (R_FAILED(rc))
         fatalSimple(MAKERESULT(Module_HomebrewLoader, 15));
 
-    IpcParsedCommand ipc;
-    rc = ipcParse(&ipc);
-    if (R_FAILED(rc))
-        fatalSimple(MAKERESULT(Module_HomebrewLoader, 16));
-
-    if (ipc.NumHandles != 1)
+    HipcParsedRequest r = hipcParseRequest(base);
+    if (r.meta.num_copy_handles != 1)
         fatalSimple(MAKERESULT(Module_HomebrewLoader, 17));
 
-    g_procHandle = ipc.Handles[0];
+    g_procHandle = r.data.copy_handles[0];
     svcCloseHandle(session);
 }
 
@@ -211,7 +210,6 @@ static void getIsAutomaticGameplayRecording(void) {
 
 static void getOwnProcessHandle(void)
 {
-    static Thread t;
     Result rc;
 
     Handle server_handle, client_handle;
@@ -219,7 +217,8 @@ static void getOwnProcessHandle(void)
     if (R_FAILED(rc))
         fatalSimple(MAKERESULT(Module_HomebrewLoader, 12));
 
-    rc = threadCreate(&t, &procHandleReceiveThread, (void*)(uintptr_t)server_handle, 0x1000, 0x20, 0);
+    Thread t;
+    rc = threadCreate(&t, &procHandleReceiveThread, (void*)(uintptr_t)server_handle, NULL, 0x1000, 0x20, 0);
     if (R_FAILED(rc))
         fatalSimple(MAKERESULT(Module_HomebrewLoader, 10));
 
@@ -227,12 +226,11 @@ static void getOwnProcessHandle(void)
     if (R_FAILED(rc))
         fatalSimple(MAKERESULT(Module_HomebrewLoader, 13));
 
-    IpcCommand ipc;
-    ipcInitialize(&ipc);
-    ipcSendHandleCopy(&ipc, CUR_PROCESS_HANDLE);
-    ipcPrepareHeader(&ipc, 0);
+    hipcMakeRequestInline(armGetTls(),
+        .num_copy_handles = 1,
+    ).copy_handles[0] = CUR_PROCESS_HANDLE;
 
-    ipcDispatch(client_handle);
+    svcSendSyncRequest(client_handle);
     svcCloseHandle(client_handle);
 
     threadWaitForExit(&t);
