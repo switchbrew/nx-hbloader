@@ -1,6 +1,9 @@
 #include <switch.h>
 #include <string.h>
-#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+#define DEFAULT_NRO "sdmc:/hbmenu.nro"
 
 const char g_noticeText[] =
     "nx-hbloader " VERSION "\0"
@@ -28,6 +31,7 @@ static u8 g_savedTls[0x100];
 // Minimize fs resource usage
 u32 __nx_fs_num_sessions = 1;
 u32 __nx_fsdev_direntry_cache_size = 1;
+bool __nx_fsdev_support_cwd = false;
 
 // Used by trampoline.s
 Result g_lastRet = 0;
@@ -37,7 +41,7 @@ extern void* __stack_top;//Defined in libnx.
 
 void __libnx_initheap(void)
 {
-    static char g_innerheap[0x20000];
+    static char g_innerheap[0x4000];
 
     extern char* fake_heap_start;
     extern char* fake_heap_end;
@@ -84,8 +88,6 @@ void __appInit(void)
     rc = fsInitialize();
     if (R_FAILED(rc))
         fatalSimple(MAKERESULT(Module_HomebrewLoader, 2));
-
-    fsdevMountSdmc();
 }
 
 void __wrap_exit(void)
@@ -284,10 +286,10 @@ void loadNro(void)
         g_nroAddr = g_nroSize = 0;
     }
 
-    if (strlen(g_nextNroPath) == 0)
+    if (g_nextNroPath[0] == '\0')
     {
-        strcpy(g_nextNroPath, "sdmc:/hbmenu.nro");
-        strcpy(g_nextArgv,    "sdmc:/hbmenu.nro");
+        memcpy(g_nextNroPath, DEFAULT_NRO, sizeof(DEFAULT_NRO));
+        memcpy(g_nextArgv,    DEFAULT_NRO, sizeof(DEFAULT_NRO));
     }
 
     memcpy(g_argv, g_nextArgv, sizeof g_argv);
@@ -298,27 +300,32 @@ void loadNro(void)
     header = (NroHeader*) (nrobuf + sizeof(NroStart));
     uint8_t*   rest   = (uint8_t*)   (nrobuf + sizeof(NroStart) + sizeof(NroHeader));
 
-    FILE* f = fopen(g_nextNroPath, "rb");
-    if (f == NULL)
+    rc = fsdevMountSdmc();
+    if (R_FAILED(rc))
+        fatalSimple(MAKERESULT(Module_HomebrewLoader, 404));
+
+    int fd = open(g_nextNroPath, O_RDONLY);
+    if (fd < 0)
         fatalSimple(MAKERESULT(Module_HomebrewLoader, 3));
 
     // Reset NRO path to load hbmenu by default next time.
     g_nextNroPath[0] = '\0';
 
-    if (fread(start, sizeof(*start), 1, f) != 1)
+    if (read(fd, start, sizeof(*start)) != sizeof(*start))
         fatalSimple(MAKERESULT(Module_HomebrewLoader, 4));
 
-    if (fread(header, sizeof(*header), 1, f) != 1)
+    if (read(fd, header, sizeof(*header)) != sizeof(*header))
         fatalSimple(MAKERESULT(Module_HomebrewLoader, 4));
 
-    if(header->magic != NROHEADER_MAGIC)
+    if (header->magic != NROHEADER_MAGIC)
         fatalSimple(MAKERESULT(Module_HomebrewLoader, 5));
 
     size_t rest_size = header->size - (sizeof(NroStart) + sizeof(NroHeader));
-    if (fread(rest, rest_size, 1, f) != 1)
+    if (read(fd, rest, rest_size) != rest_size)
         fatalSimple(MAKERESULT(Module_HomebrewLoader, 7));
 
-    fclose(f);
+    close(fd);
+    fsdevUnmountAll();
 
     size_t total_size = header->size + header->bss_size;
     total_size = (total_size+0xFFF) & ~0xFFF;
