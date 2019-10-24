@@ -180,7 +180,7 @@ static void getIsApplication(void) {
     rc = pmshellInitialize();
 
     if (R_SUCCEEDED(rc)) {
-        rc = pmshellGetApplicationPid(&app_pid);
+        rc = pmshellGetApplicationProcessIdForShell(&app_pid);
         pmshellExit();
     }
 
