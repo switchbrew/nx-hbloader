@@ -193,7 +193,7 @@ static void getIsAutomaticGameplayRecording(void) {
         Result rc=0;
         u64 cur_tid=0;
 
-        rc = svcGetInfo(&cur_tid, InfoType_TitleId, CUR_PROCESS_HANDLE, 0);
+        rc = svcGetInfo(&cur_tid, InfoType_ProgramId, CUR_PROCESS_HANDLE, 0);
         if (R_FAILED(rc)) return;
 
         g_isAutomaticGameplayRecording = 0;
