@@ -174,6 +174,15 @@ static void getIsApplication(void) {
 
     g_isApplication = 0;
 
+    if (hosversionAtLeast(9,0,0)) {
+        u64 flag=0;
+        rc = svcGetInfo(&flag, InfoType_IsApplication, CUR_PROCESS_HANDLE, 0);
+        if (R_SUCCEEDED(rc)) {
+            g_isApplication = flag!=0;
+            return;
+        }
+    }
+
     rc = svcGetProcessId(&cur_pid, CUR_PROCESS_HANDLE);
     if (R_FAILED(rc)) return;
 
@@ -201,8 +210,8 @@ static void getIsAutomaticGameplayRecording(void) {
         rc = nsInitialize();
 
         if (R_SUCCEEDED(rc)) {
-            size_t dummy;
-            rc = nsGetApplicationControlData(0x1, cur_tid, &g_applicationControlData, sizeof(g_applicationControlData), &dummy);
+            u64 size=0;
+            rc = nsGetApplicationControlData(NsApplicationControlSource_Storage, cur_tid, &g_applicationControlData, sizeof(g_applicationControlData), &size);
             nsExit();
         }
 
