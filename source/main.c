@@ -408,7 +408,7 @@ void loadNro(void)
         { EntryType_Argv,                 0, {0, 0} },
         { EntryType_NextLoadPath,         0, {0, 0} },
         { EntryType_LastLoadResult,       0, {0, 0} },
-        { EntryType_SyscallAvailableHint, 0, {0xffffffffffffffff, 0x9fc1fff0007ffff} },
+        { EntryType_SyscallAvailableHint, 0, {0xffffffffffffffff, 0x9fc9fff0007ffff} },
         { EntryType_RandomSeed,           0, {0, 0} },
         { EntryType_UserIdStorage,        0, {(u64)(uintptr_t)&g_userIdStorage, 0} },
         { EntryType_HosVersion,           0, {0, 0} },
