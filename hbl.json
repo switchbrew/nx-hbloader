@@ -33,10 +33,10 @@
         {
             "type": "syscalls",
             "value": {
-                "svcSetHeapSize": "0x00",
-                "svcSetMemoryPermission": "0x01",
-                "svcSetMemoryAttribute": "0x02",
-                "svcUnknown03": "0x03",
+                "svcUnknown00": "0x00",
+                "svcSetHeapSize": "0x01",
+                "svcSetMemoryPermission": "0x02",
+                "svcSetMemoryAttribute": "0x03",
                 "svcMapMemory": "0x04",
                 "svcUnmapMemory": "0x05",
                 "svcQueryMemory": "0x06",
