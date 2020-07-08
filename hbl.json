@@ -13,8 +13,6 @@
     "is_retail": true,
     "filesystem_access": {
         "permissions": "0xFFFFFFFFFFFFFFFF",
-        "content_owner_id_min": "0x0000000000000000",
-        "content_owner_id_max": "0xFFFFFFFFFFFFFFFF",
         "content_owner_ids": [
             "0x0100000000001000"
         ]
