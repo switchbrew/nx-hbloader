@@ -20,6 +20,7 @@ static bool g_isApplication = 0;
 static NsApplicationControlData g_applicationControlData;
 static bool g_isAutomaticGameplayRecording = 0;
 static bool g_smCloseWorkaround = false;
+static bool g_isCodeMemoryAvailable = false;
 
 static u64 g_appletHeapSize = 0;
 static u64 g_appletHeapReservationSize = 0;
@@ -248,6 +249,31 @@ static void getOwnProcessHandle(void)
     threadClose(&t);
 }
 
+static void getIsCodeMemoryAvailable(void)
+{
+    Result rc;
+    u64 tmp = 0;
+    const bool is_5x = R_VALUE(svcGetInfo(&tmp, InfoType_UserExceptionContextAddress, INVALID_HANDLE, 0)) != KERNELRESULT(InvalidEnumValue);
+
+    if (is_5x) {
+        // On [5.0.0+], the kernel does not allow the creator process of a CodeMemory object
+        // to use svcControlCodeMemory on itself, thus returning InvalidMemoryState (0xD401).
+        // However the kernel could be patched or reimplemented to support same-process usage of CodeMemory.
+        // We can detect that by passing a bad operation and observe if we actually get InvalidEnumValue (0xF001).
+        Handle code;
+        rc = svcCreateCodeMemory(&code, g_heapAddr, 0x1000);
+        if (R_SUCCEEDED(rc)) {
+            rc = svcControlCodeMemory(code, (CodeMapOperation)-1, 0, 0x1000, 0);
+            g_isCodeMemoryAvailable = R_VALUE(rc) == KERNELRESULT(InvalidEnumValue);
+            svcCloseHandle(code);
+        }
+    } else {
+        // On [4.0.0-4.1.0] there is no such restriction on own-process CodeMemory usage.
+        const bool is_4x = R_VALUE(svcGetInfo(&tmp, InfoType_InitialProcessIdRange, INVALID_HANDLE, 0)) != KERNELRESULT(InvalidEnumValue);
+        g_isCodeMemoryAvailable = is_4x;
+    }
+}
+
 void loadNro(void)
 {
     NroHeader* header = NULL;
@@ -416,10 +442,17 @@ void loadNro(void)
     };
 
     ConfigEntry *entry_AppletType = &entries[2];
+    ConfigEntry *entry_Syscalls   = &entries[7];
 
     if (g_isApplication) {
         entry_AppletType->Value[0] = AppletType_SystemApplication;
         entry_AppletType->Value[1] = EnvAppletFlags_ApplicationOverride;
+    }
+
+    if (!g_isCodeMemoryAvailable) {
+        // Revoke access to code memory syscalls if own-process code memory is not available.
+        entry_Syscalls->Value[0x4B/64] &= ~(1UL << (0x4B%64)); // svcCreateCodeMemory
+        entry_Syscalls->Value[0x4C/64] &= ~(1UL << (0x4C%64)); // svcControlCodeMemory
     }
 
     // MainThreadHandle
@@ -469,6 +502,7 @@ int main(int argc, char **argv)
     smExit(); // Close SM as we don't need it anymore.
     setupHbHeap();
     getOwnProcessHandle();
+    getIsCodeMemoryAvailable();
     loadNro();
 
     fatalThrow(MAKERESULT(Module_HomebrewLoader, 8));
