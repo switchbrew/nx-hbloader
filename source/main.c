@@ -19,7 +19,6 @@ static bool g_isApplication = 0;
 
 static NsApplicationControlData g_applicationControlData;
 static bool g_isAutomaticGameplayRecording = 0;
-static bool g_smCloseWorkaround = false;
 static bool g_isCodeMemoryAvailable = false;
 
 static u64 g_appletHeapSize = 0;
@@ -280,14 +279,6 @@ void loadNro(void)
     size_t rw_size=0;
     Result rc=0;
 
-    if (g_smCloseWorkaround) {
-        // For old applications, wait for SM to handle closing the SM session from this process.
-        // If we don't do this, smInitialize will fail once eventually used later.
-        // This is caused by a bug in old versions of libnx that was fixed in commit 68a77ac950.
-        g_smCloseWorkaround = false;
-        svcSleepThread(1000000000);
-    }
-
     memcpy((u8*)armGetTls() + 0x100, g_savedTls, 0x100);
 
     if (g_nroSize > 0)
@@ -367,10 +358,6 @@ void loadNro(void)
 
     rw_size = header->segments[2].size + header->bss_size;
     rw_size = (rw_size+0xFFF) & ~0xFFF;
-
-    bool has_mod0 = false;
-    if (start->mod_offset > 0 && start->mod_offset <= (total_size-0x24)) // Validate MOD0 offset
-        has_mod0 = *(uint32_t*)(nrobuf + start->mod_offset) == 0x30444F4D; // Validate MOD0 header
 
     int i;
     for (i=0; i<3; i++)
@@ -481,13 +468,6 @@ void loadNro(void)
     g_nroSize = nro_size;
 
     memset(__stack_top - STACK_SIZE, 0, STACK_SIZE);
-
-    if (!has_mod0) {
-        // Apply sm-close workaround to NROs which do not contain a valid MOD0 header.
-        // This heuristic is based on the fact that MOD0 support was added very shortly after
-        // the fix for the sm-close bug (in fact, two commits later).
-        g_smCloseWorkaround = true;
-    }
 
     extern NORETURN void nroEntrypointTrampoline(u64 entries_ptr, u64 handle, u64 entrypoint);
     nroEntrypointTrampoline((u64) entries, -1, entrypoint);
