@@ -288,6 +288,8 @@ void loadNro(void)
         rw_size = header->segments[2].size + header->bss_size;
         rw_size = (rw_size+0xFFF) & ~0xFFF;
 
+        svcBreak(BreakReason_NotificationOnlyFlag | BreakReason_PreUnloadDll, g_nroAddr, g_nroSize);
+
         // .text
         rc = svcUnmapProcessCodeMemory(
             g_procHandle, g_nroAddr + header->segments[0].file_off, ((u64) g_heapAddr) + header->segments[0].file_off, header->segments[0].size);
@@ -309,6 +311,8 @@ void loadNro(void)
         if (R_FAILED(rc))
             fatalThrow(MAKERESULT(Module_HomebrewLoader, 26));
 
+        svcBreak(BreakReason_NotificationOnlyFlag | BreakReason_PostUnloadDll, g_nroAddr, g_nroSize);
+
         g_nroAddr = g_nroSize = 0;
     }
 
@@ -319,6 +323,8 @@ void loadNro(void)
     }
 
     memcpy(g_argv, g_nextArgv, sizeof g_argv);
+
+    svcBreak(BreakReason_NotificationOnlyFlag | BreakReason_PreLoadDll, (uintptr_t)g_argv, sizeof(g_argv));
 
     uint8_t *nrobuf = (uint8_t*) g_heapAddr;
 
@@ -462,6 +468,8 @@ void loadNro(void)
 
     g_nroAddr = (u64)map_addr;
     g_nroSize = nro_size;
+
+    svcBreak(BreakReason_NotificationOnlyFlag | BreakReason_PostLoadDll, g_nroAddr, g_nroSize);
 
     memset(__stack_top - STACK_SIZE, 0, STACK_SIZE);
 
