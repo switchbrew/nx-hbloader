@@ -375,34 +375,32 @@ void loadNro(void)
     memcpy(&g_nroHeader, header, sizeof(g_nroHeader));
     header = &g_nroHeader;
 
-    u64 map_addr;
-
-    do {
-        map_addr = randomGet64() & 0xFFFFFF000ull;
-        rc = svcMapProcessCodeMemory(g_procHandle, map_addr, (u64)nrobuf, total_size);
-
-    } while (rc == 0xDC01 || rc == 0xD401);
+    // Map code memory to a new randomized address
+    virtmemLock();
+    void* map_addr = virtmemFindAslr(total_size, 0);
+    rc = svcMapProcessCodeMemory(g_procHandle, (u64)map_addr, (u64)nrobuf, total_size);
+    virtmemUnlock();
 
     if (R_FAILED(rc))
         fatalThrow(MAKERESULT(Module_HomebrewLoader, 18));
 
     // .text
     rc = svcSetProcessMemoryPermission(
-        g_procHandle, map_addr + header->segments[0].file_off, header->segments[0].size, Perm_R | Perm_X);
+        g_procHandle, (u64)map_addr + header->segments[0].file_off, header->segments[0].size, Perm_R | Perm_X);
 
     if (R_FAILED(rc))
         fatalThrow(MAKERESULT(Module_HomebrewLoader, 19));
 
     // .rodata
     rc = svcSetProcessMemoryPermission(
-        g_procHandle, map_addr + header->segments[1].file_off, header->segments[1].size, Perm_R);
+        g_procHandle, (u64)map_addr + header->segments[1].file_off, header->segments[1].size, Perm_R);
 
     if (R_FAILED(rc))
         fatalThrow(MAKERESULT(Module_HomebrewLoader, 20));
 
     // .data + .bss
     rc = svcSetProcessMemoryPermission(
-        g_procHandle, map_addr + header->segments[2].file_off, rw_size, Perm_Rw);
+        g_procHandle, (u64)map_addr + header->segments[2].file_off, rw_size, Perm_Rw);
 
     if (R_FAILED(rc))
         fatalThrow(MAKERESULT(Module_HomebrewLoader, 21));
@@ -462,15 +460,13 @@ void loadNro(void)
     // HosVersion
     entries[10].Value[0] = hosversionGet();
 
-    u64 entrypoint = map_addr;
-
-    g_nroAddr = map_addr;
+    g_nroAddr = (u64)map_addr;
     g_nroSize = nro_size;
 
     memset(__stack_top - STACK_SIZE, 0, STACK_SIZE);
 
     extern NORETURN void nroEntrypointTrampoline(u64 entries_ptr, u64 handle, u64 entrypoint);
-    nroEntrypointTrampoline((u64) entries, -1, entrypoint);
+    nroEntrypointTrampoline((u64) entries, -1, g_nroAddr);
 }
 
 int main(int argc, char **argv)
