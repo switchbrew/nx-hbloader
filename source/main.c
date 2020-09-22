@@ -198,7 +198,7 @@ static void getIsApplication(void) {
 
 //Gets the control.nacp for the current title id, and then sets g_isAutomaticGameplayRecording if less memory should be allocated.
 static void getIsAutomaticGameplayRecording(void) {
-    if (hosversionAtLeast(5,0,0) && g_isApplication) {
+    if (hosversionAtLeast(4,0,0) && g_isApplication) {
         Result rc=0;
         u64 cur_tid=0;
 
