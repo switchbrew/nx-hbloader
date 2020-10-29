@@ -72,7 +72,7 @@ void __appInit(void)
 
     rc = smInitialize();
     if (R_FAILED(rc))
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 1));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 1));
 
     rc = setsysInitialize();
     if (R_SUCCEEDED(rc)) {
@@ -87,13 +87,13 @@ void __appInit(void)
 
     rc = fsInitialize();
     if (R_FAILED(rc))
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 2));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 2));
 }
 
 void __wrap_exit(void)
 {
     // exit() effectively never gets called, so let's stub it out.
-    fatalThrow(MAKERESULT(Module_HomebrewLoader, 39));
+    diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 39));
 }
 
 static void*  g_heapAddr;
@@ -138,7 +138,7 @@ static void setupHbHeap(void)
     Result rc = svcSetHeapSize(&addr, size);
 
     if (R_FAILED(rc) || addr==NULL)
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 9));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 9));
 
     g_heapAddr = addr;
     g_heapSize = size;
@@ -157,11 +157,11 @@ static void procHandleReceiveThread(void* arg)
     s32 idx = 0;
     rc = svcReplyAndReceive(&idx, &session, 1, INVALID_HANDLE, UINT64_MAX);
     if (R_FAILED(rc))
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 15));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 15));
 
     HipcParsedRequest r = hipcParseRequest(base);
     if (r.meta.num_copy_handles != 1)
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 17));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 17));
 
     g_procHandle = r.data.copy_handles[0];
     svcCloseHandle(session);
@@ -226,16 +226,16 @@ static void getOwnProcessHandle(void)
     Handle server_handle, client_handle;
     rc = svcCreateSession(&server_handle, &client_handle, 0, 0);
     if (R_FAILED(rc))
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 12));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 12));
 
     Thread t;
     rc = threadCreate(&t, &procHandleReceiveThread, (void*)(uintptr_t)server_handle, NULL, 0x1000, 0x20, 0);
     if (R_FAILED(rc))
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 10));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 10));
 
     rc = threadStart(&t);
     if (R_FAILED(rc))
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 13));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 13));
 
     hipcMakeRequestInline(armGetTls(),
         .num_copy_handles = 1,
@@ -295,21 +295,21 @@ void loadNro(void)
             g_procHandle, g_nroAddr + header->segments[0].file_off, ((u64) g_heapAddr) + header->segments[0].file_off, header->segments[0].size);
 
         if (R_FAILED(rc))
-            fatalThrow(MAKERESULT(Module_HomebrewLoader, 24));
+            diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 24));
 
         // .rodata
         rc = svcUnmapProcessCodeMemory(
             g_procHandle, g_nroAddr + header->segments[1].file_off, ((u64) g_heapAddr) + header->segments[1].file_off, header->segments[1].size);
 
         if (R_FAILED(rc))
-            fatalThrow(MAKERESULT(Module_HomebrewLoader, 25));
+            diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 25));
 
        // .data + .bss
         rc = svcUnmapProcessCodeMemory(
             g_procHandle, g_nroAddr + header->segments[2].file_off, ((u64) g_heapAddr) + header->segments[2].file_off, rw_size);
 
         if (R_FAILED(rc))
-            fatalThrow(MAKERESULT(Module_HomebrewLoader, 26));
+            diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 26));
 
         svcBreak(BreakReason_NotificationOnlyFlag | BreakReason_PostUnloadDll, g_nroAddr, g_nroSize);
 
@@ -334,27 +334,27 @@ void loadNro(void)
 
     rc = fsdevMountSdmc();
     if (R_FAILED(rc))
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 404));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 404));
 
     int fd = open(g_nextNroPath, O_RDONLY);
     if (fd < 0)
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 3));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 3));
 
     // Reset NRO path to load hbmenu by default next time.
     g_nextNroPath[0] = '\0';
 
     if (read(fd, start, sizeof(*start)) != sizeof(*start))
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 4));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 4));
 
     if (read(fd, header, sizeof(*header)) != sizeof(*header))
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 4));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 4));
 
     if (header->magic != NROHEADER_MAGIC)
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 5));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 5));
 
     size_t rest_size = header->size - (sizeof(NroStart) + sizeof(NroHeader));
     if (read(fd, rest, rest_size) != rest_size)
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 7));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 7));
 
     close(fd);
     fsdevUnmountAll();
@@ -371,7 +371,7 @@ void loadNro(void)
         if (header->segments[i].file_off >= header->size || header->segments[i].size > header->size ||
             (header->segments[i].file_off + header->segments[i].size) > header->size)
         {
-            fatalThrow(MAKERESULT(Module_HomebrewLoader, 6));
+            diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 6));
         }
     }
 
@@ -388,28 +388,28 @@ void loadNro(void)
     virtmemUnlock();
 
     if (R_FAILED(rc))
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 18));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 18));
 
     // .text
     rc = svcSetProcessMemoryPermission(
         g_procHandle, (u64)map_addr + header->segments[0].file_off, header->segments[0].size, Perm_R | Perm_X);
 
     if (R_FAILED(rc))
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 19));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 19));
 
     // .rodata
     rc = svcSetProcessMemoryPermission(
         g_procHandle, (u64)map_addr + header->segments[1].file_off, header->segments[1].size, Perm_R);
 
     if (R_FAILED(rc))
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 20));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 20));
 
     // .data + .bss
     rc = svcSetProcessMemoryPermission(
         g_procHandle, (u64)map_addr + header->segments[2].file_off, rw_size, Perm_Rw);
 
     if (R_FAILED(rc))
-        fatalThrow(MAKERESULT(Module_HomebrewLoader, 21));
+        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 21));
 
     u64 nro_size = header->segments[2].file_off + rw_size;
     u64 nro_heap_start = ((u64) g_heapAddr) + nro_size;
@@ -489,6 +489,6 @@ int main(int argc, char **argv)
     getIsCodeMemoryAvailable();
     loadNro();
 
-    fatalThrow(MAKERESULT(Module_HomebrewLoader, 8));
+    diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 8));
     return 0;
 }
