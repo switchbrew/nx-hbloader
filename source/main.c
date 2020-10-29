@@ -404,7 +404,7 @@ void loadNro(void)
 
     // Map code memory to a new randomized address
     virtmemLock();
-    void* map_addr = virtmemFindAslr(total_size, 0);
+    void* map_addr = virtmemFindCodeMemory(total_size, 0);
     rc = svcMapProcessCodeMemory(g_procHandle, (u64)map_addr, (u64)nrobuf, total_size);
     virtmemUnlock();
 
