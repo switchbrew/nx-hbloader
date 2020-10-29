@@ -19,7 +19,11 @@ static bool g_isApplication = 0;
 
 static NsApplicationControlData g_applicationControlData;
 static bool g_isAutomaticGameplayRecording = 0;
-static bool g_isCodeMemoryAvailable = false;
+static enum {
+    CodeMemoryUnavailable    = 0,
+    CodeMemoryForeignProcess = BIT(0),
+    CodeMemorySameProcess    = BIT(0) | BIT(1),
+} g_codeMemoryCapability = CodeMemoryUnavailable;
 
 static u64 g_appletHeapSize = 0;
 static u64 g_appletHeapReservationSize = 0;
@@ -248,28 +252,45 @@ static void getOwnProcessHandle(void)
     threadClose(&t);
 }
 
-static void getIsCodeMemoryAvailable(void)
-{
-    Result rc;
-    u64 tmp = 0;
-    const bool is_5x = R_VALUE(svcGetInfo(&tmp, InfoType_UserExceptionContextAddress, INVALID_HANDLE, 0)) != KERNELRESULT(InvalidEnumValue);
+static bool isKernel5xOrLater(void) {
+    u64 dummy = 0;
+    Result rc = svcGetInfo(&dummy, InfoType_UserExceptionContextAddress, INVALID_HANDLE, 0);
+    return R_VALUE(rc) != KERNELRESULT(InvalidEnumValue);
+}
 
-    if (is_5x) {
+static bool isKernel4x(void) {
+    u64 dummy = 0;
+    Result rc = svcGetInfo(&dummy, InfoType_InitialProcessIdRange, INVALID_HANDLE, 0);
+    return R_VALUE(rc) != KERNELRESULT(InvalidEnumValue);
+}
+
+static void getCodeMemoryCapability(void)
+{
+    if (detectMesosphere()) {
+        // Mesosphère allows for same-process code memory usage.
+        g_codeMemoryCapability = CodeMemorySameProcess;
+    } else if (isKernel5xOrLater()) {
         // On [5.0.0+], the kernel does not allow the creator process of a CodeMemory object
         // to use svcControlCodeMemory on itself, thus returning InvalidMemoryState (0xD401).
-        // However the kernel could be patched or reimplemented to support same-process usage of CodeMemory.
+        // However the kernel can be patched to support same-process usage of CodeMemory.
         // We can detect that by passing a bad operation and observe if we actually get InvalidEnumValue (0xF001).
         Handle code;
-        rc = svcCreateCodeMemory(&code, g_heapAddr, 0x1000);
+        Result rc = svcCreateCodeMemory(&code, g_heapAddr, 0x1000);
         if (R_SUCCEEDED(rc)) {
             rc = svcControlCodeMemory(code, (CodeMapOperation)-1, 0, 0x1000, 0);
-            g_isCodeMemoryAvailable = R_VALUE(rc) == KERNELRESULT(InvalidEnumValue);
             svcCloseHandle(code);
+
+            if (R_VALUE(rc) == KERNELRESULT(InvalidEnumValue))
+                g_codeMemoryCapability = CodeMemorySameProcess;
+            else
+                g_codeMemoryCapability = CodeMemoryForeignProcess;
         }
+    } else if (isKernel4x()) {
+        // On [4.0.0-4.1.0] there is no such restriction on same-process CodeMemory usage.
+        g_codeMemoryCapability = CodeMemorySameProcess;
     } else {
-        // On [4.0.0-4.1.0] there is no such restriction on own-process CodeMemory usage.
-        const bool is_4x = R_VALUE(svcGetInfo(&tmp, InfoType_InitialProcessIdRange, INVALID_HANDLE, 0)) != KERNELRESULT(InvalidEnumValue);
-        g_isCodeMemoryAvailable = is_4x;
+        // This kernel is too old to support CodeMemory syscalls.
+        g_codeMemoryCapability = CodeMemoryUnavailable;
     }
 }
 
@@ -440,9 +461,13 @@ void loadNro(void)
         entry_AppletType->Value[1] = EnvAppletFlags_ApplicationOverride;
     }
 
-    if (!g_isCodeMemoryAvailable) {
-        // Revoke access to code memory syscalls if own-process code memory is not available.
-        entry_Syscalls->Value[0x4B/64] &= ~(1UL << (0x4B%64)); // svcCreateCodeMemory
+    if (!(g_codeMemoryCapability & BIT(0))) {
+        // Revoke access to svcCreateCodeMemory if it's not available.
+        entry_Syscalls->Value[0x4B/64] &= ~(1UL << (0x4B%64));
+    }
+
+    if (!(g_codeMemoryCapability & BIT(1))) {
+        // Revoke access to svcControlCodeMemory if it's not available for same-process usage.
         entry_Syscalls->Value[0x4C/64] &= ~(1UL << (0x4C%64)); // svcControlCodeMemory
     }
 
@@ -486,7 +511,7 @@ int main(int argc, char **argv)
     smExit(); // Close SM as we don't need it anymore.
     setupHbHeap();
     getOwnProcessHandle();
-    getIsCodeMemoryAvailable();
+    getCodeMemoryCapability();
     loadNro();
 
     diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 8));
