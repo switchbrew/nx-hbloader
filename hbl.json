@@ -91,7 +91,7 @@
                 "svcWaitForAddress": "0x34",
                 "svcSignalToAddress": "0x35",
                 "svcSynchronizePreemptionState": "0x36",
-                "svcUnknown37": "0x37",
+                "svcGetResourceLimitPeakValue": "0x37",
                 "svcUnknown38": "0x38",
                 "svcUnknown39": "0x39",
                 "svcUnknown3a": "0x3A",
