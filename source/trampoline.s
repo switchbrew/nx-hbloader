@@ -1,14 +1,8 @@
 .section .text.nroEntrypointTrampoline, "ax", %progbits
-
+.align 2
 .global nroEntrypointTrampoline
 .type   nroEntrypointTrampoline, %function
-.align 2
-
-.global __libnx_exception_entry
-.type   __libnx_exception_entry, %function
-
 .cfi_startproc
-
 nroEntrypointTrampoline:
 
     // Reset stack pointer.
@@ -34,18 +28,20 @@ nroEntrypointTrampoline:
 
 .section .text.__libnx_exception_entry, "ax", %progbits
 .align 2
-
+.global __libnx_exception_entry
+.type   __libnx_exception_entry, %function
 .cfi_startproc
-
 __libnx_exception_entry:
+
+    // Divert execution to the NRO entrypoint (if a NRO is actually loaded).
     adrp x7, g_nroAddr
     ldr  x7, [x7, #:lo12:g_nroAddr]
-    cbz  x7, __libnx_exception_entry_fail
+    cbz  x7, .Lfail
     br   x7
 
-__libnx_exception_entry_fail:
-    mov w0, #0xf801
-    bl svcReturnFromException
-    b .
+.Lfail:
+    // Otherwise, pass this unhandled exception right back to the kernel.
+    mov w0, #0xf801 // KERNELRESULT(UnhandledUserInterrupt)
+    svc 0x28        // svcReturnFromException
 
 .cfi_endproc

@@ -17,13 +17,17 @@ static u64  g_nroSize = 0;
 static NroHeader g_nroHeader;
 static bool g_isApplication = 0;
 
-static NsApplicationControlData g_applicationControlData;
 static bool g_isAutomaticGameplayRecording = 0;
 static enum {
     CodeMemoryUnavailable    = 0,
     CodeMemoryForeignProcess = BIT(0),
     CodeMemorySameProcess    = BIT(0) | BIT(1),
 } g_codeMemoryCapability = CodeMemoryUnavailable;
+
+static Handle g_procHandle;
+
+static void*  g_heapAddr;
+static size_t g_heapSize;
 
 static u64 g_appletHeapSize = 0;
 static u64 g_appletHeapReservationSize = 0;
@@ -40,8 +44,7 @@ bool __nx_fsdev_support_cwd = false;
 // Used by trampoline.s
 Result g_lastRet = 0;
 
-extern void* __stack_top;//Defined in libnx.
-#define STACK_SIZE 0x100000 //Change this if main-thread stack size ever changes.
+void NORETURN nroEntrypointTrampoline(const ConfigEntry* entries, u64 handle, u64 entrypoint);
 
 void __libnx_initheap(void)
 {
@@ -100,9 +103,6 @@ void __wrap_exit(void)
     diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 39));
 }
 
-static void*  g_heapAddr;
-static size_t g_heapSize;
-
 static u64 calculateMaxHeapSize(void)
 {
     u64 size = 0;
@@ -148,8 +148,6 @@ static void setupHbHeap(void)
     g_heapSize = size;
 }
 
-static Handle g_procHandle;
-
 static void procHandleReceiveThread(void* arg)
 {
     Handle session = (Handle)(uintptr_t)arg;
@@ -171,55 +169,61 @@ static void procHandleReceiveThread(void* arg)
     svcCloseHandle(session);
 }
 
-//Gets the PID of the process with application_type==APPLICATION in the NPDM, then sets g_isApplication if it matches the current PID.
-static void getIsApplication(void) {
-    Result rc=0;
-    u64 cur_pid=0, app_pid=0;
+// Sets g_isApplication if the hbloader process is running as an Application.
+static void getIsApplication(void)
+{
+    Result rc;
 
-    g_isApplication = 0;
-
-    if (hosversionAtLeast(9,0,0)) {
-        u64 flag=0;
-        rc = svcGetInfo(&flag, InfoType_IsApplication, CUR_PROCESS_HANDLE, 0);
-        if (R_SUCCEEDED(rc)) {
-            g_isApplication = flag!=0;
-            return;
-        }
+    // Try asking the kernel directly (only works on [9.0.0+] or mesosphère)
+    u64 flag=0;
+    rc = svcGetInfo(&flag, InfoType_IsApplication, CUR_PROCESS_HANDLE, 0);
+    if (R_SUCCEEDED(rc)) {
+        g_isApplication = flag!=0;
+        return;
     }
 
+    // Retrieve our process' PID
+    u64 cur_pid=0;
     rc = svcGetProcessId(&cur_pid, CUR_PROCESS_HANDLE);
-    if (R_FAILED(rc)) return;
+    if (R_FAILED(rc)) diagAbortWithResult(rc); // shouldn't happen
 
+    // Try reading the current application PID through pm:shell - if it matches ours then we are indeed an application
     rc = pmshellInitialize();
-
     if (R_SUCCEEDED(rc)) {
+        u64 app_pid=0;
         rc = pmshellGetApplicationProcessIdForShell(&app_pid);
         pmshellExit();
-    }
 
-    if (R_SUCCEEDED(rc) && cur_pid == app_pid) g_isApplication = 1;
+        if (cur_pid == app_pid)
+            g_isApplication = 1;
+    }
 }
 
-//Gets the control.nacp for the current title id, and then sets g_isAutomaticGameplayRecording if less memory should be allocated.
-static void getIsAutomaticGameplayRecording(void) {
-    if (hosversionAtLeast(4,0,0) && g_isApplication) {
-        Result rc=0;
-        u64 cur_tid=0;
+// Sets g_isAutomaticGameplayRecording if the current program has automatic gameplay recording enabled in its NACP.
+//Gets the control.nacp for the current program id, and then sets g_isAutomaticGameplayRecording if less memory should be allocated.
+static void getIsAutomaticGameplayRecording(void)
+{
+    Result rc;
 
-        rc = svcGetInfo(&cur_tid, InfoType_ProgramId, CUR_PROCESS_HANDLE, 0);
-        if (R_FAILED(rc)) return;
+    // Do nothing if the HOS version predates [4.0.0], or we're not an application.
+    if (hosversionBefore(4,0,0) || !g_isApplication)
+        return;
 
-        g_isAutomaticGameplayRecording = 0;
+    // Retrieve our process' Program ID
+    u64 cur_progid=0;
+    rc = svcGetInfo(&cur_progid, InfoType_ProgramId, CUR_PROCESS_HANDLE, 0);
+    if (R_FAILED(rc)) diagAbortWithResult(rc); // shouldn't happen
 
-        rc = nsInitialize();
+    // Try reading our NACP
+    rc = nsInitialize();
+    if (R_SUCCEEDED(rc)) {
+        NsApplicationControlData data; // note: this is 144KB, which still fits comfortably within the 1MB of stack we have
+        u64 size=0;
+        rc = nsGetApplicationControlData(NsApplicationControlSource_Storage, cur_progid, &data, sizeof(data), &size);
+        nsExit();
 
-        if (R_SUCCEEDED(rc)) {
-            u64 size=0;
-            rc = nsGetApplicationControlData(NsApplicationControlSource_Storage, cur_tid, &g_applicationControlData, sizeof(g_applicationControlData), &size);
-            nsExit();
-        }
-
-        if (R_SUCCEEDED(rc) && g_applicationControlData.nacp.video_capture == 2) g_isAutomaticGameplayRecording = 1;
+        if (R_SUCCEEDED(rc) && data.nacp.video_capture == 2)
+            g_isAutomaticGameplayRecording = 1;
     }
 }
 
@@ -252,13 +256,15 @@ static void getOwnProcessHandle(void)
     threadClose(&t);
 }
 
-static bool isKernel5xOrLater(void) {
+static bool isKernel5xOrLater(void)
+{
     u64 dummy = 0;
     Result rc = svcGetInfo(&dummy, InfoType_UserExceptionContextAddress, INVALID_HANDLE, 0);
     return R_VALUE(rc) != KERNELRESULT(InvalidEnumValue);
 }
 
-static bool isKernel4x(void) {
+static bool isKernel4x(void)
+{
     u64 dummy = 0;
     Result rc = svcGetInfo(&dummy, InfoType_InitialProcessIdRange, INVALID_HANDLE, 0);
     return R_VALUE(rc) != KERNELRESULT(InvalidEnumValue);
@@ -479,10 +485,10 @@ void loadNro(void)
     entries[3].Value[0] = nro_heap_start;
     entries[3].Value[1] = nro_heap_size;
     // Argv
-    entries[4].Value[1] = (u64) &g_argv[0];
+    entries[4].Value[1] = (u64)(uintptr_t)&g_argv[0];
     // NextLoadPath
-    entries[5].Value[0] = (u64) &g_nextNroPath[0];
-    entries[5].Value[1] = (u64) &g_nextArgv[0];
+    entries[5].Value[0] = (u64)(uintptr_t)&g_nextNroPath[0];
+    entries[5].Value[1] = (u64)(uintptr_t)&g_nextArgv[0];
     // LastLoadResult
     entries[6].Value[0] = g_lastRet;
     // RandomSeed
@@ -496,10 +502,7 @@ void loadNro(void)
 
     svcBreak(BreakReason_NotificationOnlyFlag | BreakReason_PostLoadDll, g_nroAddr, g_nroSize);
 
-    memset(__stack_top - STACK_SIZE, 0, STACK_SIZE);
-
-    extern NORETURN void nroEntrypointTrampoline(u64 entries_ptr, u64 handle, u64 entrypoint);
-    nroEntrypointTrampoline((u64) entries, -1, g_nroAddr);
+    nroEntrypointTrampoline(&entries[0], -1, g_nroAddr);
 }
 
 int main(int argc, char **argv)
