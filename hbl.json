@@ -119,6 +119,7 @@
                 "svcCreateSharedMemory": "0x50",
                 "svcMapTransferMemory": "0x51",
                 "svcUnmapTransferMemory": "0x52",
+                "svcQueryIoMapping": "0x55",
                 "svcDebugActiveProcess": "0x60",
                 "svcBreakDebugProcess": "0x61",
                 "svcTerminateDebugProcess": "0x62",
@@ -162,6 +163,15 @@
                 "allow_debug": true,
                 "force_debug": true
             }
+        },
+        {
+            "type": "map_region",
+            "value": [
+                {
+                    "region_type": 1,
+                    "is_ro": true
+                }
+            ]
         }
     ]
 }
