@@ -162,6 +162,15 @@
                 "allow_debug": true,
                 "force_debug": true
             }
+        },
+        {
+            "type": "map_region",
+            "value": [
+                {
+                    "region_type": 1,
+                    "is_ro": true
+                }
+            ]
         }
     ]
 }
