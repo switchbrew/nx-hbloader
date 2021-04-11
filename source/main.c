@@ -77,6 +77,14 @@ void __appInit(void)
 {
     Result rc;
 
+    // Detect Atmosphère early on. This is required for hosversion logic.
+    // In the future, this check will be replaced by detectMesosphere().
+    Handle dummy;
+    rc = svcConnectToNamedPort(&dummy, "ams");
+    u32 ams_flag = (R_VALUE(rc) != KERNELRESULT(NotFound)) ? BIT(31) : 0;
+    if (R_SUCCEEDED(rc))
+        svcCloseHandle(dummy);
+
     rc = smInitialize();
     if (R_FAILED(rc))
         diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 1));
@@ -86,7 +94,7 @@ void __appInit(void)
         SetSysFirmwareVersion fw;
         rc = setsysGetFirmwareVersion(&fw);
         if (R_SUCCEEDED(rc))
-            hosversionSet(MAKEHOSVERSION(fw.major, fw.minor, fw.micro));
+            hosversionSet(ams_flag | MAKEHOSVERSION(fw.major, fw.minor, fw.micro));
         readSetting("applet_heap_size", &g_appletHeapSize, sizeof(g_appletHeapSize));
         readSetting("applet_heap_reservation_size", &g_appletHeapReservationSize, sizeof(g_appletHeapReservationSize));
         setsysExit();
@@ -496,6 +504,7 @@ void loadNro(void)
     entries[8].Value[1] = randomGet64();
     // HosVersion
     entries[10].Value[0] = hosversionGet();
+    entries[10].Value[1] = hosversionIsAtmosphere() ? 0x41544d4f53504852UL : 0; // 'ATMOSPHR'
 
     g_nroAddr = (u64)map_addr;
     g_nroSize = nro_size;
