@@ -43,7 +43,7 @@ SOURCES		:=	source
 DATA		:=	data
 INCLUDES	:=	include
 #ROMFS	:=	romfs
-APP_VERSION	:=	2.4.1
+APP_VERSION	:=	2.4.2
 
 ifeq ($(RELEASE),)
 	APP_VERSION	:=	$(APP_VERSION)-$(shell git describe --dirty --always)
