@@ -501,11 +501,11 @@ void loadNro(void)
     // LastLoadResult
     entries[6].Value[0] = g_lastRet;
     // RandomSeed
-    entries[8].Value[0] = randomGet64();
-    entries[8].Value[1] = randomGet64();
+    entries[9].Value[0] = randomGet64();
+    entries[9].Value[1] = randomGet64();
     // HosVersion
-    entries[10].Value[0] = hosversionGet();
-    entries[10].Value[1] = hosversionIsAtmosphere() ? 0x41544d4f53504852UL : 0; // 'ATMOSPHR'
+    entries[11].Value[0] = hosversionGet();
+    entries[11].Value[1] = hosversionIsAtmosphere() ? 0x41544d4f53504852UL : 0; // 'ATMOSPHR'
 
     g_nroAddr = (u64)map_addr;
     g_nroSize = nro_size;
