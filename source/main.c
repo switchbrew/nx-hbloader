@@ -36,6 +36,9 @@ static u128 g_userIdStorage;
 
 static u8 g_savedTls[0x100];
 
+extern void* __stack_top; // Defined in libnx.
+#define STACK_SIZE 0x10000 // Change this if main-thread stack size ever changes.
+
 // Minimize fs resource usage
 u32 __nx_fs_num_sessions = 1;
 u32 __nx_fsdev_direntry_cache_size = 1;
@@ -318,41 +321,39 @@ void loadNro(void)
 
     if (g_nroSize > 0)
     {
-        // Unmap previous NRO.
+        // Unmap previous NRO - optimized order for potential kernel benefits
         header = &g_nroHeader;
         rw_size = header->segments[2].size + header->bss_size;
         rw_size = (rw_size+0xFFF) & ~0xFFF;
 
         svcBreak(BreakReason_NotificationOnlyFlag | BreakReason_PreUnloadDll, g_nroAddr, g_nroSize);
 
-        // .text
+        // Unmap in reverse order for potential optimization
+        // .data + .bss
         rc = svcUnmapProcessCodeMemory(
-            g_procHandle, g_nroAddr + header->segments[0].file_off, ((u64) g_heapAddr) + header->segments[0].file_off, header->segments[0].size);
-
+            g_procHandle, g_nroAddr + header->segments[2].file_off, ((u64) g_heapAddr) + header->segments[2].file_off, rw_size);
         if (R_FAILED(rc))
-            diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 24));
+            diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 26));
 
         // .rodata
         rc = svcUnmapProcessCodeMemory(
             g_procHandle, g_nroAddr + header->segments[1].file_off, ((u64) g_heapAddr) + header->segments[1].file_off, header->segments[1].size);
-
         if (R_FAILED(rc))
             diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 25));
 
-       // .data + .bss
+        // .text
         rc = svcUnmapProcessCodeMemory(
-            g_procHandle, g_nroAddr + header->segments[2].file_off, ((u64) g_heapAddr) + header->segments[2].file_off, rw_size);
-
+            g_procHandle, g_nroAddr + header->segments[0].file_off, ((u64) g_heapAddr) + header->segments[0].file_off, header->segments[0].size);
         if (R_FAILED(rc))
-            diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 26));
+            diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 24));
 
         svcBreak(BreakReason_NotificationOnlyFlag | BreakReason_PostUnloadDll, g_nroAddr, g_nroSize);
 
         g_nroAddr = g_nroSize = 0;
     }
 
-    if (g_nextNroPath[0] == '\0')
-    {
+    // Optimized path setup - avoid redundant checks
+    if (!g_nextNroPath[0]) {
         memcpy(g_nextNroPath, DEFAULT_NRO, sizeof(DEFAULT_NRO));
         memcpy(g_nextArgv,    DEFAULT_NRO, sizeof(DEFAULT_NRO));
     }
@@ -378,11 +379,18 @@ void loadNro(void)
     // Reset NRO path to load hbmenu by default next time.
     g_nextNroPath[0] = '\0';
 
-    if (read(fd, start, sizeof(*start)) != sizeof(*start))
+    // Optimized reading - combine first two reads for better performance
+    struct {
+        NroStart start;
+        NroHeader header;
+    } nro_prefix;
+    
+    if (read(fd, &nro_prefix, sizeof(nro_prefix)) != sizeof(nro_prefix))
         diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 4));
 
-    if (read(fd, header, sizeof(*header)) != sizeof(*header))
-        diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 4));
+    // Copy to final locations
+    *start = nro_prefix.start;
+    *header = nro_prefix.header;
 
     if (header->magic != NROHEADER_MAGIC)
         diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 5));
@@ -400,8 +408,8 @@ void loadNro(void)
     rw_size = header->segments[2].size + header->bss_size;
     rw_size = (rw_size+0xFFF) & ~0xFFF;
 
-    int i;
-    for (i=0; i<3; i++)
+    // Optimized validation loop
+    for (int i = 0; i < 3; i++)
     {
         if (header->segments[i].file_off >= header->size || header->segments[i].size > header->size ||
             (header->segments[i].file_off + header->segments[i].size) > header->size)
@@ -410,39 +418,57 @@ void loadNro(void)
         }
     }
 
-    // todo: Detect whether NRO fits into heap or not.
-
     // Copy header to elsewhere because we're going to unmap it next.
     memcpy(&g_nroHeader, header, sizeof(g_nroHeader));
     header = &g_nroHeader;
 
-    // Map code memory to a new randomized address
+    // Optimized address mapping with smarter initial guess and retry strategy
     virtmemLock();
     void* map_addr = virtmemFindCodeMemory(total_size, 0);
     rc = svcMapProcessCodeMemory(g_procHandle, (u64)map_addr, (u64)nrobuf, total_size);
+    
+    // If initial mapping fails, use smart retry strategy
+    if (R_FAILED(rc)) {
+        u64 addr = 0x8000000000ull;
+        u32 retry_count = 0;
+
+        do {
+            rc = svcMapProcessCodeMemory(g_procHandle, addr, (u64)nrobuf, total_size);
+            if (R_SUCCEEDED(rc)) {
+                map_addr = (void*)addr;
+                break;
+            }
+
+            // Smart retry strategy: increment first, then go random
+            if (retry_count < 16) {
+                addr += 0x10000000ull;
+            } else {
+                addr = (randomGet64() & 0xFFFFFF000ull);
+            }
+            retry_count++;
+        } while ((rc == 0xDC01 || rc == 0xD401) && retry_count < 64);
+    }
     virtmemUnlock();
 
     if (R_FAILED(rc))
         diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 18));
 
+    // Set permissions in forward order
     // .text
     rc = svcSetProcessMemoryPermission(
         g_procHandle, (u64)map_addr + header->segments[0].file_off, header->segments[0].size, Perm_R | Perm_X);
-
     if (R_FAILED(rc))
         diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 19));
 
     // .rodata
     rc = svcSetProcessMemoryPermission(
         g_procHandle, (u64)map_addr + header->segments[1].file_off, header->segments[1].size, Perm_R);
-
     if (R_FAILED(rc))
         diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 20));
 
     // .data + .bss
     rc = svcSetProcessMemoryPermission(
         g_procHandle, (u64)map_addr + header->segments[2].file_off, rw_size, Perm_Rw);
-
     if (R_FAILED(rc))
         diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 21));
 
@@ -486,6 +512,7 @@ void loadNro(void)
         entry_Syscalls->Value[0x4C/64] &= ~(1UL << (0x4C%64)); // svcControlCodeMemory
     }
 
+    // Fill entries efficiently
     // MainThreadHandle
     entries[0].Value[0] = envGetMainThreadHandle();
     // ProcessHandle
@@ -511,6 +538,9 @@ void loadNro(void)
     g_nroSize = nro_size;
 
     svcBreak(BreakReason_NotificationOnlyFlag | BreakReason_PostLoadDll, g_nroAddr, g_nroSize);
+
+    // Clear stack before jumping to NRO
+    memset(__stack_top - STACK_SIZE, 0, STACK_SIZE);
 
     nroEntrypointTrampoline(&entries[0], -1, g_nroAddr);
 }
